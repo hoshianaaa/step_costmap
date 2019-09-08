@@ -21,16 +21,10 @@ private:
 	ros::Publisher cloud_pub_;
 	tf::TransformListener tf_listener_;
 	void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs);
-	costmap_2d::Costmap2D step_costmap_;
-	costmap_2d::Costmap2D height_costmap_;// 255:unknown  100:0cm  0:-100cm  200:100cm
+	costmap_2d::Costmap2D costmap_;
 	
 	std::string sensor_frame_, topic_name_;
 	double sensor_range_x_min_, sensor_range_x_max_, sensor_range_y_min_, sensor_range_y_max_, sensor_range_z_min_, sensor_range_z_max_;
-	unsigned char heightToCost(double height){
-		if (height > 100)return 200;
-		if (height < -100)return 0;
-		return height + 100;
-	}
 };
 
 StepCostmap::StepCostmap()
@@ -47,18 +41,9 @@ StepCostmap::StepCostmap()
 	private_nh.param("sensor_range_z_min", sensor_range_z_min_, -0.6);
 	private_nh.param("sensor_range_z_max", sensor_range_z_max_, -0.3);
 	
-	step_costmap_.setDefaultValue(0);
-	step_costmap_.resizeMap(40, 40, 0.1, 0, 0);
-
-	height_costmap_.setDefaultValue(255);
-	height_costmap_.resizeMap(40, 40, 0.1, 0, 0);
-
-	for (unsigned int i=0;i<40;i++){
-		for (unsigned int j=0;j<40;j++){
-			std::cout << (int)height_costmap_.getCost(i,j) << ",";
-		}
-		std::cout << std::endl;
-	}
+	costmap_.setDefaultValue(0);
+	costmap_.resizeMap(40, 40, 0.1, 0, 0);
+	
 
 	cloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/step_cloud", 1, false);
 	cloud_sub_ = nh_.subscribe(topic_name_, 1, &StepCostmap::cloudCallback, this);
@@ -73,17 +58,6 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 
 	unsigned int mx, my;
 	double wx, wy, wz;
-	
-	double height_raw[40][40];
-	int counter_raw[40][40];
-		
-	for (int i=0;i<40;i++){
-		for (int j=0;j<40;j++){
-			height_raw[i][j] = 0;
-			counter_raw[i][j] = 0;
-		}
-	}
-	
 	
 	try
 	{	
@@ -102,9 +76,7 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 	new_origin_y = robot_y - step_costmap_.getSizeInMetersY() / 2;
 	
 	
-	step_costmap_.updateOrigin(new_origin_x, new_origin_y);
-	height_costmap_.updateOrigin(new_origin_x, new_origin_y);
-
+	costmap_.updateOrigin(new_origin_x, new_origin_y);
 	
 	pcl::PointCloud<pcl::PointXYZI> pcl_cloud;
 	
@@ -144,34 +116,6 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 		ROS_WARN("%s", e.what());
 	}
 	
-	for (int i=0;i<pcl_cloud.width;i++){
-		wx = pcl_cloud.points[i].x;
-		wy = pcl_cloud.points[i].y;
-		wz = pcl_cloud.points[i].z;
-		if (height_costmap_.worldToMap(wx, wy, mx, my))
-		{
-			height_raw[mx][my] = height_raw[mx][my] + wz;
-			//debug//
-			std::cout << height_raw[mx][my] << std::endl;
-			counter_raw[mx][my] = counter_raw[mx][my] + 1;
-		}
-	}
-	
-	for (unsigned int i=0;i<40;i++){
-		for (unsigned int j=0;j<40;j++){
-			if (height_costmap_.getCost(i,j) == 255){
-				height_costmap_.setCost(i,j,heightToCost(height_raw[i][j]/counter_raw[i][j]));
-			}else{
-				unsigned int c;
-				double w = 0.6;
-				c = int(w * height_costmap_.getCost(i,j) + (1-w) * heightToCost(height_raw[i][j]/counter_raw[i][j]));
-				height_costmap_.setCost(i,j,c);
-			}
-			//debug//
-			//std::cout << height_raw[i][j] << ",";
-		}
-		//std::cout << std::endl;
-	}
 }
 
 int main(int argc, char **argv)
