@@ -8,6 +8,7 @@
 #include <pcl_ros/point_cloud.h>
 #include <pcl_ros/transforms.h>
 #include <pcl/filters/passthrough.h>
+#include <pcl/filters/voxel_grid.h>
 
 
 
@@ -18,9 +19,10 @@ public:
 private:
 	ros::NodeHandle nh_;
 	ros::Subscriber cloud_sub_;
-	ros::Publisher cloud_pub_;
+	ros::Publisher cloud_pub1_;
 	tf::TransformListener tf_listener_;
 	void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs);
+	pcl::PointCloud<pcl::PointXYZI> stored_pcl_cloud_;
 	costmap_2d::Costmap2D costmap_;
 	
 	std::string sensor_frame_, topic_name_;
@@ -45,7 +47,7 @@ StepCostmap::StepCostmap()
 	costmap_.resizeMap(40, 40, 0.1, 0, 0);
 	
 
-	cloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/step_cloud", 1, false);
+	cloud_pub1_ = nh_.advertise<sensor_msgs::PointCloud2>("/cloud1", 1, false);
 	cloud_sub_ = nh_.subscribe(topic_name_, 1, &StepCostmap::cloudCallback, this);
 }
 
@@ -62,7 +64,7 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 	try
 	{	
 		tf::StampedTransform trans;
-		tf_listener_.waitForTransform("odom", "base_link", ros::Time(0), ros::Duration(0.5));
+		tf_listener_.waitForTransform("odom", "base_link", ros::Time(0), ros::Duration(1));
 		tf_listener_.lookupTransform("odom", "base_link", ros::Time(0), trans);
 		robot_x = trans.getOrigin().x();
 		robot_y = trans.getOrigin().y();
@@ -72,8 +74,8 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 		ROS_WARN("%s", e.what());
 	}
 		
-	new_origin_x = robot_x - step_costmap_.getSizeInMetersX() / 2;
-	new_origin_y = robot_y - step_costmap_.getSizeInMetersY() / 2;
+	new_origin_x = robot_x - costmap_.getSizeInMetersX() / 2;
+	new_origin_y = robot_y - costmap_.getSizeInMetersY() / 2;
 	
 	
 	costmap_.updateOrigin(new_origin_x, new_origin_y);
@@ -102,19 +104,37 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 	pass.filter (pcl_cloud);
 	
 	//debug//
-	std::cout << "pcl_cloud size:" << pcl_cloud.width << std::endl;
+	std::cout << "pcl_cloud size2:" << pcl_cloud.width << std::endl;
 
+
+	pcl::PointCloud<pcl::PointXYZI> pcl_cloud_odom;
 	try
 	{
 		tf::StampedTransform trans;
-		tf_listener_.waitForTransform("odom", sensor_frame_, ros::Time(0), ros::Duration(0.5));
-		tf_listener_.lookupTransform(sensor_frame_, "odom", ros::Time(0), trans);
-		pcl_ros::transformPointCloud("odom", pcl_cloud, pcl_cloud,tf_listener_);
+		tf_listener_.waitForTransform("odom", sensor_frame_, ros::Time(0), ros::Duration(10.0));
+		tf_listener_.lookupTransform("odom", sensor_frame_, ros::Time(0), trans);
+		pcl_ros::transformPointCloud("odom", pcl_cloud, pcl_cloud_odom,tf_listener_);
 	}
 	catch(tf::TransformException &e)
 	{
 		ROS_WARN("%s", e.what());
 	}
+
+  stored_pcl_cloud_ += pcl_cloud_odom;
+  pcl::VoxelGrid<pcl::PointXYZI> sor;
+  sor.setInputCloud(stored_pcl_cloud_.makeShared());
+  sor.setLeafSize(0.01f, 0.01f, 0.01f);
+  sor.filter (stored_pcl_cloud_);
+
+
+
+  sensor_msgs::PointCloud2 cloud1;
+  pcl::toROSMsg(stored_pcl_cloud_, cloud1);
+  cloud1.header.frame_id = "odom";
+  cloud_pub1_.publish(cloud1);
+
+
+
 	
 }
 
@@ -123,7 +143,7 @@ int main(int argc, char **argv)
     std::cout << "start step_costmap" << std::endl;
 	ros::init(argc, argv, "step_costmap");
 	StepCostmap sc;
-	ros::Rate r(5);
+	ros::Rate r(20);
 	while(ros::ok()){
 		ros::spinOnce();
 		r.sleep();
