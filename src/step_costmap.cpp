@@ -20,6 +20,7 @@ private:
 	ros::NodeHandle nh_;
 	ros::Subscriber cloud_sub_;
 	ros::Publisher cloud_pub1_;
+	ros::Publisher cloud_pub2_;
 	tf::TransformListener tf_listener_;
 	void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs);
 	pcl::PointCloud<pcl::PointXYZI> stored_pcl_cloud_;
@@ -27,6 +28,7 @@ private:
 	
 	std::string sensor_frame_, topic_name_;
 	double sensor_range_x_min_, sensor_range_x_max_, sensor_range_y_min_, sensor_range_y_max_, sensor_range_z_min_, sensor_range_z_max_;
+    double z_th_;
 };
 
 StepCostmap::StepCostmap()
@@ -42,12 +44,15 @@ StepCostmap::StepCostmap()
 	private_nh.param("sensor_range_y_max", sensor_range_y_max_, 2.0);
 	private_nh.param("sensor_range_z_min", sensor_range_z_min_, -0.6);
 	private_nh.param("sensor_range_z_max", sensor_range_z_max_, -0.3);
+
+	private_nh.param("z_th", z_th_, 0.1);
 	
 	costmap_.setDefaultValue(0);
 	costmap_.resizeMap(40, 40, 0.1, 0, 0);
 	
 
 	cloud_pub1_ = nh_.advertise<sensor_msgs::PointCloud2>("/cloud1", 1, false);
+	cloud_pub2_ = nh_.advertise<sensor_msgs::PointCloud2>("/cloud2", 1, false);
 	cloud_sub_ = nh_.subscribe(topic_name_, 1, &StepCostmap::cloudCallback, this);
 }
 
@@ -76,7 +81,6 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 		
 	new_origin_x = robot_x - costmap_.getSizeInMetersX() / 2;
 	new_origin_y = robot_y - costmap_.getSizeInMetersY() / 2;
-	
 	
 	costmap_.updateOrigin(new_origin_x, new_origin_y);
 	
@@ -143,36 +147,56 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
     cloud_pub1_.publish(cloud1);
 
     pcl::PointCloud<pcl::PointXYZI> step_pcl_cloud;
+    pcl::PointCloud<pcl::PointXYZI> region_y_pcl_cloud;
     pcl::PointCloud<pcl::PointXYZI> region_pcl_cloud;
 
     double grid_width = 0.1;
     
     for (int i=0;i<(4.0/grid_width);i++)
     {
-        int x_min = robot_x - 2.0 + i*grid_width;
+        double x_min = robot_x - 2.0 + i*grid_width;
         pass.setInputCloud (stored_pcl_cloud_.makeShared());
         pass.setFilterFieldName ("x");
         pass.setFilterLimits (x_min, x_min + grid_width);
-        pass.filter (region_pcl_cloud);
+        pass.filter (region_y_pcl_cloud);
         
         for (int j=0;j<(4.0/grid_width);j++){
 
-            int y_min = robot_y - 2.0 + j*grid_width;
-            pass.setInputCloud (region_pcl_cloud.makeShared());
+            double y_min = robot_y - 2.0 + j*grid_width;
+            pass.setInputCloud (region_y_pcl_cloud.makeShared());
             pass.setFilterFieldName ("y");
             pass.setFilterLimits (y_min, y_min + grid_width);
             pass.filter (region_pcl_cloud);
             
-            std::cout << "region_pcl_cloud size " << 40*i + j << ":" <<  region_pcl_cloud.size() << std::endl;
+            //std::cout << "region_pcl_cloud size " << 40*i + j << ":" <<  region_pcl_cloud.size() << std::endl;
+
+            if (region_pcl_cloud.size() != 0)
+            {
+                double z_min=region_pcl_cloud.points[0].z;
+                double z_max=region_pcl_cloud.points[0].z;
+                double z_now;
+                for (int k=0;k<region_pcl_cloud.size();k++){
+                    z_now = region_pcl_cloud.points[k].z;
+                    if (z_min > z_now)z_min = z_now;
+                    if (z_max < z_now)z_max = z_now;
+                    //std::cout << "z_min " << z_min << std::endl;
+                }
+                std::cout << z_max - z_min << std::endl;
+                if ((z_max - z_min) > z_th_)step_pcl_cloud += region_pcl_cloud;
+            }
         }
     }
 
+    sensor_msgs::PointCloud2 cloud2;
+    pcl::toROSMsg(step_pcl_cloud, cloud2);
+    std::cout << "step_pcl_cloud size:" << step_pcl_cloud.size() << std::endl;
+    step_pcl_cloud.clear();
+    cloud2.header.frame_id = "odom";
+    cloud_pub2_.publish(cloud2);
 
-       
 
-    
 
-	
+
 }
 
 int main(int argc, char **argv)
