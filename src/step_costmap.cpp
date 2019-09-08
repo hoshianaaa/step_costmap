@@ -111,8 +111,8 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 	try
 	{
 		tf::StampedTransform trans;
-		tf_listener_.waitForTransform("odom", sensor_frame_, ros::Time(0), ros::Duration(10.0));
-		tf_listener_.lookupTransform("odom", sensor_frame_, ros::Time(0), trans);
+		//tf_listener_.waitForTransform(sensor_frame_, "odom", ros::Time(0), ros::Duration(10.0));
+		tf_listener_.lookupTransform(sensor_frame_, "odom", ros::Time(0), trans);
 		pcl_ros::transformPointCloud("odom", pcl_cloud, pcl_cloud_odom,tf_listener_);
 	}
 	catch(tf::TransformException &e)
@@ -120,11 +120,11 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 		ROS_WARN("%s", e.what());
 	}
 
-  stored_pcl_cloud_ += pcl_cloud_odom;
-  pcl::VoxelGrid<pcl::PointXYZI> sor;
-  sor.setInputCloud(stored_pcl_cloud_.makeShared());
-  sor.setLeafSize(0.01f, 0.01f, 0.01f);
-  sor.filter (stored_pcl_cloud_);
+    stored_pcl_cloud_ += pcl_cloud_odom;
+    pcl::VoxelGrid<pcl::PointXYZI> sor;
+    sor.setInputCloud(stored_pcl_cloud_.makeShared());
+    sor.setLeafSize(0.01f, 0.01f, 0.01f);
+    sor.filter (stored_pcl_cloud_);
 
 	pass.setInputCloud (stored_pcl_cloud_.makeShared());
 	pass.setFilterFieldName ("x");
@@ -137,12 +137,40 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 	pass.filter (stored_pcl_cloud_);
 
 
-  sensor_msgs::PointCloud2 cloud1;
-  pcl::toROSMsg(stored_pcl_cloud_, cloud1);
-  cloud1.header.frame_id = "odom";
-  cloud_pub1_.publish(cloud1);
+    sensor_msgs::PointCloud2 cloud1;
+    pcl::toROSMsg(stored_pcl_cloud_, cloud1);
+    cloud1.header.frame_id = "odom";
+    cloud_pub1_.publish(cloud1);
+
+    pcl::PointCloud<pcl::PointXYZI> step_pcl_cloud;
+    pcl::PointCloud<pcl::PointXYZI> region_pcl_cloud;
+
+    double grid_width = 0.1;
+    
+    for (int i=0;i<(4.0/grid_width);i++)
+    {
+        int x_min = robot_x - 2.0 + i*grid_width;
+        pass.setInputCloud (stored_pcl_cloud_.makeShared());
+        pass.setFilterFieldName ("x");
+        pass.setFilterLimits (x_min, x_min + grid_width);
+        pass.filter (region_pcl_cloud);
+        
+        for (int j=0;j<(4.0/grid_width);j++){
+
+            int y_min = robot_y - 2.0 + j*grid_width;
+            pass.setInputCloud (region_pcl_cloud.makeShared());
+            pass.setFilterFieldName ("y");
+            pass.setFilterLimits (y_min, y_min + grid_width);
+            pass.filter (region_pcl_cloud);
+            
+            std::cout << "region_pcl_cloud size " << 40*i + j << ":" <<  region_pcl_cloud.size() << std::endl;
+        }
+    }
 
 
+       
+
+    
 
 	
 }
