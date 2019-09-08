@@ -126,6 +126,15 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
   sor.setLeafSize(0.01f, 0.01f, 0.01f);
   sor.filter (stored_pcl_cloud_);
 
+	pass.setInputCloud (stored_pcl_cloud_.makeShared());
+	pass.setFilterFieldName ("x");
+	pass.setFilterLimits (robot_x - 2.0, robot_x + 2.0);
+	pass.filter (stored_pcl_cloud_);
+	
+	pass.setInputCloud (stored_pcl_cloud_.makeShared());
+	pass.setFilterFieldName ("y");
+	pass.setFilterLimits (robot_y - 2.0, robot_y + 2.0);
+	pass.filter (stored_pcl_cloud_);
 
 
   sensor_msgs::PointCloud2 cloud1;
@@ -143,7 +152,7 @@ int main(int argc, char **argv)
     std::cout << "start step_costmap" << std::endl;
 	ros::init(argc, argv, "step_costmap");
 	StepCostmap sc;
-	ros::Rate r(20);
+	ros::Rate r(10);
 	while(ros::ok()){
 		ros::spinOnce();
 		r.sleep();
