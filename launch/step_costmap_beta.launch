@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+
+<launch>
+  <node name="step_costmap" pkg="step_costmap" type="step_costmap" output="screen">
+    <param name="sensor_frame" value="hokuyo3d_link" />
+    <param name="topic_name" value="hokuyo3d/hokuyo_cloud2" />
+  	<param name="sensor_range_x_min" value="0" />
+    <param name="sensor_range_x_max" value="2.0" />
+    <param name="sensor_range_y_min" value="-2.0" />
+    <param name="sensor_range_y_max" value="2.0" />
+    <param name="sensor_range_z_min" value="0.5" />
+    <param name="sensor_range_z_max" value="0.7" />
+    <param name="cost_threshold" value="1" />
+  </node>
+</launch>
