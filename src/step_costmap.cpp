@@ -17,11 +17,11 @@
 #define MAX_Z 1
 #define HAVE_VALUE 2
 
-#define HIGH 1
+#define LOW 1
 #define MIDDLE 2
-#define LOW 3
+#define HIGH 3
 #define ROAD 4
-#define NONE 5
+#define NONE 0
 
 
 
@@ -164,8 +164,10 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 
     double diff_map[160][160];
     
+    
     for (int i=0;i<160;i++){
         for (int j=0;j<160;j++){
+            diff_map[i][j] = 0;
             if (i == 0 || j == 0 || i == 159 || j == 160){
                 diff_map[i][j] = 0;
             }
@@ -191,7 +193,8 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
     for (int i=0;i<160;i++){
         for (int j=0;j<160;j++){
             double diff_value = diff_map[i][j];
-            if (0 < diff_value && diff_value < 0.1)type_map[i][j] = ROAD;
+            if (diff_value == 0)type_map[i][j] = NONE;
+            else if (0 < diff_value && diff_value < 0.1)type_map[i][j] = ROAD;
             else if (diff_value < 0.3)type_map[i][j] = LOW;
             else if (diff_value < 0.4)type_map[i][j] = MIDDLE;
             else if (diff_value >= 0.4)type_map[i][j] = HIGH;
