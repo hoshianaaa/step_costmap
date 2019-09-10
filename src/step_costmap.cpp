@@ -168,7 +168,7 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
     for (int i=0;i<160;i++){
         for (int j=0;j<160;j++){
             diff_map[i][j] = 0;
-            if (i == 0 || j == 0 || i == 159 || j == 160){
+            if (i == 0 || j == 0 || i == 159 || j == 159){
                 diff_map[i][j] = 0;
             }
             else if (height_map[i][j][HAVE_VALUE] == 1){
