@@ -23,8 +23,6 @@
 #define ROAD 4
 #define NONE 0
 
-
-
 class StepCostmap
 {
 public:
@@ -35,8 +33,10 @@ private:
 	ros::Publisher cloud_pub1_;
 	ros::Publisher cloud_pub2_;
 	tf::TransformListener tf_listener_;
+    void mapToWorld(const int map_x, const int map_y, double& world_x, double& world_y);
 	void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs);
 	costmap_2d::Costmap2D costmap_;
+
 	
 	std::string sensor_frame_, topic_name_;
 	double sensor_range_x_min_, sensor_range_x_max_, sensor_range_y_min_, sensor_range_y_max_, sensor_range_z_min_, sensor_range_z_max_;
@@ -65,6 +65,13 @@ StepCostmap::StepCostmap()
 	cloud_pub2_ = nh_.advertise<sensor_msgs::PointCloud2>("/cloud2", 1, false);
 	cloud_sub_ = nh_.subscribe(topic_name_, 1, &StepCostmap::cloudCallback, this);
 }
+
+void StepCostmap::mapToWorld(const int map_x, const int map_y, double& world_x, double& world_y){
+    world_x = map_x * 0.1 - 8.0 + 0.1/2;
+    world_y = map_y * 0.1 - 8.0 + 0.1/2;
+    return;
+}
+
 
 void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 {
@@ -193,15 +200,50 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
     for (int i=0;i<160;i++){
         for (int j=0;j<160;j++){
             double diff_value = diff_map[i][j];
-            if (diff_value == 0)type_map[i][j] = NONE;
+            if (diff_value < 0)type_map[i][j] = -1; //error
+            else if (diff_value == 0)type_map[i][j] = NONE;
             else if (0 < diff_value && diff_value < 0.1)type_map[i][j] = ROAD;
             else if (diff_value < 0.3)type_map[i][j] = LOW;
             else if (diff_value < 0.4)type_map[i][j] = MIDDLE;
             else if (diff_value >= 0.4)type_map[i][j] = HIGH;
-            std::cout << type_map[i][j] << " ";
+            //std::cout << type_map[i][j] << " ";
         }
-        std::cout << std::endl;
+        //std::cout << std::endl;
     }
+
+    //** publish low object **//
+	pcl::PointCloud<pcl::PointXYZ> low_object_pcl_cloud;
+    pcl::PointCloud<pcl::PointXYZ> one_point_pcl_cloud;
+    one_point_pcl_cloud.width = 1;
+    one_point_pcl_cloud.height = 1;
+    one_point_pcl_cloud.is_dense = false;
+    one_point_pcl_cloud.resize (1);
+
+    for (int i=0;i<160;i++){
+        for (int j=0;j<160;j++){
+            if(type_map[i][j] == LOW){
+                std::cout << "debug 222" << std::endl;
+                double world_x,world_y;
+                mapToWorld(i,j,world_x,world_y);
+                std::cout << "debug 333" << std::endl;
+                one_point_pcl_cloud.points[0].x = world_x;
+                one_point_pcl_cloud.points[0].y = world_y;
+                one_point_pcl_cloud.points[0].z = 0;
+                low_object_pcl_cloud += one_point_pcl_cloud;
+            }
+        }
+    }
+
+    sensor_msgs::PointCloud2 cloud1;
+    pcl::toROSMsg(low_object_pcl_cloud, cloud1);
+    cloud1.header.frame_id = sensor_frame_;
+    cloud_pub1_.publish(cloud1);
+               
+
+                
+
+
+
 
 	pcl::PointCloud<pcl::PointXYZI> pcl_cloud_odom;
 	try
@@ -216,10 +258,6 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 		ROS_WARN("%s", e.what());
 	}
 
-    sensor_msgs::PointCloud2 cloud1;
-    pcl::toROSMsg(pcl_cloud_odom, cloud1);
-    cloud1.header.frame_id = "odom";
-    cloud_pub1_.publish(cloud1);
 
 }
 
