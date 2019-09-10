@@ -1,0 +1,4 @@
+ring1 to ring2 :300mm
+ring2 to ring3 :300mm
+ring3 to ring4 :550mm
+ring4 to ring5 :700mm

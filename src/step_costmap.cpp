@@ -13,6 +13,13 @@
 #include <pcl/common/common.h>
 
 
+#define MIN_Z 0
+#define MAX_Z 1
+#define HAVE_VALUE 2
+
+#define HIGH 1
+#define MIDDLE 2
+#define LOW 3
 
 class StepCostmap
 {
@@ -132,24 +139,53 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 
             if (region_cloud2.size() > 0){
                 pcl::getMinMax3D (region_cloud2, minPt, maxPt);
-                height_map[i][j][0] = minPt.z;
-                height_map[i][j][1] = maxPt.z;
-                height_map[i][j][2] = 1;
+                height_map[i][j][MIN_Z] = minPt.z;
+                height_map[i][j][MAX_Z] = maxPt.z;
+                height_map[i][j][HAVE_VALUE] = 1;
             }
             else{
-                height_map[i][j][0] = 0;
-                height_map[i][j][1] = 0;
-                height_map[i][j][2] = 0;
+                height_map[i][j][MIN_Z] = 0;
+                height_map[i][j][MAX_Z] = 0;
+                height_map[i][j][HAVE_VALUE] = 0;
 
             }
             size_sum += region_cloud2.size();//debug: region size sum
             //std::cout << height_map[i][j][1] << " ";
-       }
-       //std::cout << std::endl;
-   }
-   //std::cout << "size sum:" << size_sum << std::endl;//debug: region size sum
-   size_sum = 0;
+            //std::cout << height_map[i][j][2] << " ";
+        }
+        //std::cout << std::endl;
+    }
+    //std::cout << "size sum:" << size_sum << std::endl;//debug: region size sum
+    size_sum = 0;
 
+    double diff_map[160][160];
+    
+    for (int i=0;i<160;i++){
+        for (int j=0;j<160;j++){
+            if (i == 0 || j == 0 || i == 159 || j == 160){
+                diff_map[i][j] = 0;
+            }
+            else if (height_map[i][j][HAVE_VALUE] == 1){
+                double min_z = 0;
+                for (int k=0;k<3;k++){
+                    for (int l=0;l<3;l++){
+                        if (height_map[i+k-1][j+l-1][HAVE_VALUE] == 1){
+                            if (min_z > height_map[i+k-1][j+l-1][MIN_Z]){
+                                min_z = height_map[i+k-1][j+l-1][MIN_Z];
+                            }
+                        }
+                    }
+                }
+                diff_map[i][j] = height_map[i][j][MAX_Z] - min_z;
+            }
+            std::cout << diff_map[i][j] << " ";
+        }
+        std::cout << std::endl;
+    }
+
+    
+
+    
 	pcl::PointCloud<pcl::PointXYZI> pcl_cloud_odom;
 
 	try

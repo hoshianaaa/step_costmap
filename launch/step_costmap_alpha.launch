@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+
+<launch>
+  <node name="step_costmap" pkg="step_costmap" type="step_costmap" output="screen">
+   <param name="z_th" value="0.05" />
+  </node>
+</launch>
