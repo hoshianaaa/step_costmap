@@ -106,7 +106,7 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 	pcl::fromROSMsg (*msgs, pcl_cloud);
 	
 	//debug//
-	std::cout << "pcl_cloud size 1:" << pcl_cloud.width << std::endl;
+	//std::cout << "pcl_cloud size 1:" << pcl_cloud.width << std::endl;
 
 	pcl::PassThrough<pcl::PointXYZI> pass;
 	pass.setInputCloud (pcl_cloud.makeShared());
@@ -119,7 +119,7 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 	pass.setFilterLimits (sensor_range_y_min_, sensor_range_y_max_);
 	pass.filter (pcl_cloud);
 
-	std::cout << "pcl_cloud size 2:" << pcl_cloud.width << std::endl;
+	//std::cout << "pcl_cloud size 2:" << pcl_cloud.width << std::endl;
 
 
     //region_pcl
@@ -222,10 +222,8 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
     for (int i=0;i<160;i++){
         for (int j=0;j<160;j++){
             if(type_map[i][j] == LOW){
-                std::cout << "debug 222" << std::endl;
                 double world_x,world_y;
                 mapToWorld(i,j,world_x,world_y);
-                std::cout << "debug 333" << std::endl;
                 one_point_pcl_cloud.points[0].x = world_x;
                 one_point_pcl_cloud.points[0].y = world_y;
                 one_point_pcl_cloud.points[0].z = 0;
