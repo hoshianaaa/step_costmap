@@ -11,6 +11,9 @@
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/point_types.h>
 #include <pcl/common/common.h>
+#include <pcl/PCLPointCloud2.h>
+
+#include <math.h>
 
 
 #define MIN_Z 0
@@ -23,6 +26,7 @@
 #define ROAD 4
 #define NONE 0
 
+const double D[4] = {300, 300, 550, 700}; //normal distance of ring(i) ~ ring(i+1)
 class StepCostmap
 {
 public:
@@ -33,7 +37,10 @@ private:
 	ros::Publisher cloud_pub1_;
 	ros::Publisher cloud_pub2_;
 	tf::TransformListener tf_listener_;
+    void pcl_z_merge_sort(pcl::PointCloud<pcl::PointXYZ>& pcl_cloud, int left, int right);
+    void pcl_z_merge(pcl::PointCloud<pcl::PointXYZ>& pcl_cloud, int left, int mid, int right);
     void mapToWorld(const int map_x, const int map_y, double& world_x, double& world_y);
+    void worldToMap(const double world_x, const double world_y, int& map_x, int& map_y);
 	void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs);
 	costmap_2d::Costmap2D costmap_;
 
@@ -66,12 +73,75 @@ StepCostmap::StepCostmap()
 	cloud_sub_ = nh_.subscribe(topic_name_, 1, &StepCostmap::cloudCallback, this);
 }
 
+void StepCostmap::pcl_z_merge_sort(pcl::PointCloud<pcl::PointXYZ>& pcl_cloud, int left, int right){
+    if (left + 1 < right) {
+        int mid;
+        mid = (left + right) / 2;
+
+        //devide
+        pcl_z_merge_sort(pcl_cloud, left, mid);
+        pcl_z_merge_sort(pcl_cloud, mid, right);
+
+        //conquer
+        pcl_z_merge(pcl_cloud, left, mid, right);
+    }
+}
+
+
+void StepCostmap::pcl_z_merge(pcl::PointCloud<pcl::PointXYZ>& pcl_cloud, int left, int mid, int right){
+
+    int i, j, k;
+    int n1, n2;
+    const int INFT = 10000;
+
+    n1 = mid - left;
+    n2 = right - mid;
+
+    pcl::PointCloud<pcl::PointXYZ> L, R;
+
+    for (i=0; i < n1; i++) L.push_back(pcl_cloud.at(left + i));
+    for (i=0; i < n2; i++) R.push_back(pcl_cloud.at(mid + i));
+    
+    pcl::PointXYZ pt;
+    pt.x = 0;
+    pt.y = 0;
+    pt.z = INFT;
+    
+    L.push_back(pt);
+    R.push_back(pt);
+
+    //sort
+
+    j = 0;
+    k = 0;
+
+    for (i = left; i < right; i++){
+        if (L.points[j].z <= R.points[k].z) {
+
+            pcl_cloud.at(i) = L.at(j);
+            j++;
+        } else {
+            pcl_cloud.at(i) = R.at(k);
+            k++;
+        }
+    }
+}
+
+
+
 void StepCostmap::mapToWorld(const int map_x, const int map_y, double& world_x, double& world_y){
     world_x = map_x * 0.1 - 8.0 + 0.1/2;
     world_y = map_y * 0.1 - 8.0 + 0.1/2;
-    return;
 }
 
+void StepCostmap::worldToMap(const double world_x, const double world_y, int& map_x, int& map_y){
+    map_x = int((world_x + 8.0) * 10);
+    map_y = int((world_y + 8.0) * 10);
+    if (map_x < 0)map_x = 0;
+    if (map_y < 0)map_y = 0;
+    if (map_x > 159)map_x = 159;
+    if (map_y > 159)map_y = 159;
+}
 
 void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 {
@@ -105,9 +175,6 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 	
 	pcl::fromROSMsg (*msgs, pcl_cloud);
 	
-	//debug//
-	//std::cout << "pcl_cloud size 1:" << pcl_cloud.width << std::endl;
-
 	pcl::PassThrough<pcl::PointXYZI> pass;
 	pass.setInputCloud (pcl_cloud.makeShared());
 	pass.setFilterFieldName ("x");
@@ -119,8 +186,7 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 	pass.setFilterLimits (sensor_range_y_min_, sensor_range_y_max_);
 	pass.filter (pcl_cloud);
 
-	//std::cout << "pcl_cloud size 2:" << pcl_cloud.width << std::endl;
-
+   
 
     //region_pcl
     double height_map[160][160][3];//min_z,max_z,have_value
@@ -236,27 +302,102 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
     pcl::toROSMsg(low_object_pcl_cloud, cloud1);
     cloud1.header.frame_id = sensor_frame_;
     cloud_pub1_.publish(cloud1);
-               
 
-                
+    //** ring_filter_map **//
+    std::cout << "ring_filter_map" << std::endl;
+	pcl::PointCloud<pcl::PointXYZ> ring_pcl_cloud[16];
+    for (int i=0; i<msgs->height * msgs->width; i++){
+        int arrayPosX = i * msgs->point_step + msgs->fields[0].offset;
+        int arrayPosY = i * msgs->point_step + msgs->fields[1].offset;
+        int arrayPosZ = i * msgs->point_step + msgs->fields[2].offset;
+        int ring = msgs->data[i * msgs->point_step + msgs->fields[4].offset];
+
+        float x;
+        float y;
+        float z;
+
+        memcpy(&x, &msgs->data[arrayPosX], sizeof(float));
+        memcpy(&y, &msgs->data[arrayPosY], sizeof(float));
+
+        pcl::PointXYZ Pt;
+        Pt.x = x;
+        Pt.y = y;
+        Pt.z = std::atan2(y,x);   //degree 
+        ring_pcl_cloud[ring].push_back(Pt);
+
+    }
+
+    //merge sort pcl
+    for (int i=0;i<8;i++){
+        pcl_z_merge_sort(ring_pcl_cloud[i], 0, ring_pcl_cloud[i].size());
+    }
+
+    for (int i=0;i<ring_pcl_cloud[0].size();i++){
+        std::cout << ring_pcl_cloud[0].points[i].z << " ";
+    }
+    std::cout << std::endl;
 
 
 
+    //for (int i=0;i<8;i++)std::cout << ring_pcl_cloud[i].size() << " ";
+    //std::cout << std::endl;
 
-	pcl::PointCloud<pcl::PointXYZI> pcl_cloud_odom;
-	try
-	{
-		tf::StampedTransform trans;
-		//tf_listener_.waitForTransform(sensor_frame_, "odom", ros::Time(0), ros::Duration(10.0));
-		tf_listener_.lookupTransform(sensor_frame_, "odom", ros::Time(0), trans);
-		pcl_ros::transformPointCloud("odom", pcl_cloud, pcl_cloud_odom,tf_listener_);
-	}
-	catch(tf::TransformException &e)
-	{
-		ROS_WARN("%s", e.what());
-	}
+    bool ring_filter_map[160][160];
+    for (int i=0;i<160;i++){
+        for (int j=0;j<160;j++){
+            ring_filter_map[i][j] = 0;
+        }
+    }
+
+    /* 
+    for (int i=0;i<3;i++){
+        for (int j=0;j<ring_pcl_cloud[i].size();j++){
+            double d;
+            double d1, d2;
+            double x1, x2, y1, y2
+
+            tree[i].radiusSearch(p, radius, k_indices, k_sqr_distances, max_nn);
+            if (k_indices.size() == 0)continue;
+
+            x1 = ring_pcl_cloud[i].points[j].x;
+            y1 = ring_pcl_cloud[i].points[j].y;
+            d1 = std::sqrt(x1*x1 + y1*y1);
+            
+            x2 = ring_pcl_cloud[i+1].points[k_indices].x;
+            y2 = ring_pcl_cloud[i+1].points[k_indices].y;
+            d2 = std::sqrt(x2*x2 + y2*y2);
+
+            d = d2 - d1;
+
+            int mx,my;
+            if (d/D[i] < 0.1){
+                worldToMap(x1, x2, mx, my);
+                ring_filter_map[mx][my] = 1;
+            }
+        }
+    }
+
+    for (int i=0;i<160;i++){
+        for (int j=0;j<160;j++){
+            std::cout << ring_filter_map[i][j] << " ";
+        }
+        std::cout << std::endl;
+    }
+    */
 
 
+    pcl::PointCloud<pcl::PointXYZI> pcl_cloud_odom;
+    try
+    {
+        tf::StampedTransform trans;
+        //tf_listener_.waitForTransform(sensor_frame_, "odom", ros::Time(0), ros::Duration(10.0));
+        tf_listener_.lookupTransform(sensor_frame_, "odom", ros::Time(0), trans);
+        pcl_ros::transformPointCloud("odom", pcl_cloud, pcl_cloud_odom,tf_listener_);
+    }
+    catch(tf::TransformException &e)
+    {
+        ROS_WARN("%s", e.what());
+    }
 }
 
 int main(int argc, char **argv)
