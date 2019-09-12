@@ -36,6 +36,7 @@ private:
 	ros::Subscriber cloud_sub_;
 	ros::Publisher cloud_pub1_;
 	ros::Publisher cloud_pub2_;
+	ros::Publisher cloud_pub3_;
 	tf::TransformListener tf_listener_;
     void pcl_z_merge_sort(pcl::PointCloud<pcl::PointXYZ>& pcl_cloud, int left, int right);
     void pcl_z_merge(pcl::PointCloud<pcl::PointXYZ>& pcl_cloud, int left, int mid, int right);
@@ -46,6 +47,7 @@ private:
 	void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs);
 	costmap_2d::Costmap2D costmap_;
     unsigned char probToCost(const double prob);
+    double costToProb(unsigned char cost);
 	std::string sensor_frame_, topic_name_;
 	double sensor_range_x_min_, sensor_range_x_max_, sensor_range_y_min_, sensor_range_y_max_, sensor_range_z_min_, sensor_range_z_max_;
     double z_th_;
@@ -71,6 +73,7 @@ StepCostmap::StepCostmap()
 
 	cloud_pub1_ = nh_.advertise<sensor_msgs::PointCloud2>("/cloud1", 1, false);
 	cloud_pub2_ = nh_.advertise<sensor_msgs::PointCloud2>("/cloud2", 1, false);
+	cloud_pub3_ = nh_.advertise<sensor_msgs::PointCloud2>("/step_costmap", 1, false);
 	cloud_sub_ = nh_.subscribe(topic_name_, 1, &StepCostmap::cloudCallback, this);
 }
 
@@ -186,6 +189,11 @@ double StepCostmap::road_probability(const int map_x, const int map_y){
 unsigned char StepCostmap::probToCost(const double prob){
     // -1~1 -> 0~255
     return int((255/2)*prob+255/2);
+}
+
+double StepCostmap::costToProb(unsigned char cost){
+    // 0~255 -> -1~1
+    return double((cost-255/2)/(255/2));
 }
 
 void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
@@ -506,23 +514,53 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
             if (nowOGM[i][j] > 1)nowOGM[i][j] = 1;
         }
     }
-    sensor_msgs::PointCloud2 cloud1;
-    pcl::toROSMsg(low_object_pcl_cloud, cloud1);
-    cloud1.header.frame_id = sensor_frame_;
-    cloud_pub1_.publish(cloud1);
 
-    pcl::PointCloud<pcl::PointXYZI> pcl_cloud_odom;
-    try
-    {
-        tf::StampedTransform trans;
-        //tf_listener_.waitForTransform(sensor_frame_, "odom", ros::Time(0), ros::Duration(10.0));
-        tf_listener_.lookupTransform(sensor_frame_, "odom", ros::Time(0), trans);
-        pcl_ros::transformPointCloud("odom", pcl_cloud, pcl_cloud_odom,tf_listener_);
+    unsigned char nowCostMap[160][160];
+    
+    //costmap_ -> OGM
+    double OGM[160][160];
+    for (int i=0;i<160;i++){
+        for (int j=0;j<160;j++){
+            OGM[i][j] = costToProb(costmap_.getCost(i,j));
+        }
     }
-    catch(tf::TransformException &e)
-    {
-        ROS_WARN("%s", e.what());
+
+    //add nowOGM
+    for (int i=0;i<159;i++){
+        for (int j=0;j<160;j++){
+            OGM[i][j] += nowOGM[i+1][j];
+            costmap_.setCost(i,j,probToCost(OGM[i][j]));
+            std::cout << (int)costmap_.getCost(i,j) << " ";
+        }
+        std::cout << std::endl;
     }
+
+
+	pcl::PointCloud<pcl::PointXYZ> step_pcl_cloud;
+    pcl::PointCloud<pcl::PointXYZ> one_point_pcl_cloud3;
+    one_point_pcl_cloud3.width = 1;
+    one_point_pcl_cloud3.height = 1;
+    one_point_pcl_cloud3.is_dense = false;
+    one_point_pcl_cloud3.resize (1);
+
+
+    for (int i=0;i<160;i++){
+        for (int j=0;j<160;j++){
+            if(costmap_.getCost(i,j) >= probToCost(0.7)){
+                double world_x,world_y;
+                costmap_.mapToWorld(i,j,world_x,world_y);
+                one_point_pcl_cloud3.points[0].x = world_x;
+                one_point_pcl_cloud3.points[0].y = world_y;
+                one_point_pcl_cloud3.points[0].z = 0.5;
+                step_pcl_cloud += one_point_pcl_cloud3;
+            }
+        }
+    }
+
+    sensor_msgs::PointCloud2 step_cloud;
+    pcl::toROSMsg(step_pcl_cloud, step_cloud);
+    step_cloud.header.frame_id = "odom";
+    cloud_pub3_.publish(step_cloud);
 }
 
 int main(int argc, char **argv)
