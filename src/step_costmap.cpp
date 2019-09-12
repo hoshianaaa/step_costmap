@@ -26,7 +26,7 @@
 #define ROAD 4
 #define NONE 0
 
-const double D[4] = {300, 300, 550, 700}; //normal distance of ring(i) ~ ring(i+1)
+const double D[6] = {0.300, 0.300, 0.550, 0.700, 1.2, 2.5}; //normal distance of ring(i) ~ ring(i+1)
 class StepCostmap
 {
 public:
@@ -131,7 +131,7 @@ void StepCostmap::pcl_z_merge(pcl::PointCloud<pcl::PointXYZ>& pcl_cloud, int lef
 
 bool StepCostmap::pcl_z_binary_search(const pcl::PointCloud<pcl::PointXYZ>& pcl_cloud, const double z, pcl::PointXYZ& near_point){
 
-    const double range = 0.0017;
+    const double range = 0.017;
     double d = 100.0;
     int m, r, l;
 
@@ -142,8 +142,6 @@ bool StepCostmap::pcl_z_binary_search(const pcl::PointCloud<pcl::PointXYZ>& pcl_
         m = (r + l)/2;
 
         d = std::abs(pcl_cloud.points[m].z - z);
-        std::cout << "z - z:" << pcl_cloud.points[m].z - z << std::endl;
-        std::cout << "d:" << d << std::endl;
         if (d < range)break;
 
         if ( pcl_cloud.points[m].z > z)l = m;
@@ -220,7 +218,6 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 	pcl::PointCloud<pcl::PointXYZI> region_cloud1;
 	pcl::PointCloud<pcl::PointXYZI> region_cloud2;
     pcl::PointXYZI minPt, maxPt;
-    static int size_sum;
 
     for (int i=0;i<160;i++){
 
@@ -253,14 +250,8 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
                 height_map[i][j][HAVE_VALUE] = 0;
 
             }
-            size_sum += region_cloud2.size();//debug: region size sum
-            //std::cout << height_map[i][j][1] << " ";
-            //std::cout << height_map[i][j][2] << " ";
         }
-        //std::cout << std::endl;
     }
-    //std::cout << "size sum:" << size_sum << std::endl;//debug: region size sum
-    size_sum = 0;
 
     double diff_map[160][160];
     
@@ -284,9 +275,7 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
                 }
                 diff_map[i][j] = height_map[i][j][MAX_Z] - min_z;
             }
-            //std::cout << diff_map[i][j] << " ";
         }
-        //std::cout << std::endl;
     }
 
     double type_map[160][160];
@@ -299,12 +288,11 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
             else if (diff_value < 0.3)type_map[i][j] = LOW;
             else if (diff_value < 0.4)type_map[i][j] = MIDDLE;
             else if (diff_value >= 0.4)type_map[i][j] = HIGH;
-            //std::cout << type_map[i][j] << " ";
         }
-        //std::cout << std::endl;
     }
 
     //** publish low object **//
+    /*
 	pcl::PointCloud<pcl::PointXYZ> low_object_pcl_cloud;
     pcl::PointCloud<pcl::PointXYZ> one_point_pcl_cloud;
     one_point_pcl_cloud.width = 1;
@@ -329,6 +317,7 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
     pcl::toROSMsg(low_object_pcl_cloud, cloud1);
     cloud1.header.frame_id = sensor_frame_;
     cloud_pub1_.publish(cloud1);
+    */
 
     //** ring_filter_map **//
     std::cout << "ring_filter_map" << std::endl;
@@ -359,22 +348,7 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
         pcl_z_merge_sort(ring_pcl_cloud[i], 0, ring_pcl_cloud[i].size());
     }
 
-    /*
-    for (int i=0;i<ring_pcl_cloud[0].size();i++){
-        std::cout << ring_pcl_cloud[0].points[i].z << " ";
-    }
-    std::cout << std::endl;
-    */
-
-
-    pcl::PointXYZ p;
     
-    std::cout << "ok:" << pcl_z_binary_search(ring_pcl_cloud[0] ,0.5, p);
-    std::cout << " binary search 0.5rad " << " x:" << p.x << " y:" << p.y << " z:" << p.z << std::endl;
-
-    //for (int i=0;i<8;i++)std::cout << ring_pcl_cloud[i].size() << " ";
-    //std::cout << std::endl;
-
     bool ring_filter_map[160][160];
     for (int i=0;i<160;i++){
         for (int j=0;j<160;j++){
@@ -382,43 +356,103 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
         }
     }
 
-    /* 
-    for (int i=0;i<3;i++){
+    for (int i=0;i<5;i++){
         for (int j=0;j<ring_pcl_cloud[i].size();j++){
+            double z;
             double d;
             double d1, d2;
-            double x1, x2, y1, y2
+            double x1, x2, y1, y2;
+            pcl::PointXYZ p;
 
-            tree[i].radiusSearch(p, radius, k_indices, k_sqr_distances, max_nn);
-            if (k_indices.size() == 0)continue;
+            z = ring_pcl_cloud[i].points[j].z; 
+
+            if (!pcl_z_binary_search(ring_pcl_cloud[i+1], z, p))continue;
 
             x1 = ring_pcl_cloud[i].points[j].x;
             y1 = ring_pcl_cloud[i].points[j].y;
             d1 = std::sqrt(x1*x1 + y1*y1);
-            
-            x2 = ring_pcl_cloud[i+1].points[k_indices].x;
-            y2 = ring_pcl_cloud[i+1].points[k_indices].y;
+
+            std::cout << "d1 " << d1 << std::endl;
+
+            x2 = p.x;
+            y2 = p.y;
             d2 = std::sqrt(x2*x2 + y2*y2);
+
+            std::cout << "d2 " << d2 << std::endl;
 
             d = d2 - d1;
 
             int mx,my;
             if (d/D[i] < 0.1){
-                worldToMap(x1, x2, mx, my);
+                worldToMap(x1, y1, mx, my);
                 ring_filter_map[mx][my] = 1;
             }
         }
     }
 
+    /*
+	pcl::PointCloud<pcl::PointXYZ> ring_object_pcl_cloud;
+    pcl::PointCloud<pcl::PointXYZ> one_point_pcl_cloud;
+    one_point_pcl_cloud.width = 1;
+    one_point_pcl_cloud.height = 1;
+    one_point_pcl_cloud.is_dense = false;
+    one_point_pcl_cloud.resize (1);
+
+
     for (int i=0;i<160;i++){
         for (int j=0;j<160;j++){
-            std::cout << ring_filter_map[i][j] << " ";
+            if(ring_filter_map[i][j]){
+                double world_x,world_y;
+                mapToWorld(i,j,world_x,world_y);
+                one_point_pcl_cloud.points[0].x = world_x;
+                one_point_pcl_cloud.points[0].y = world_y;
+                one_point_pcl_cloud.points[0].z = 0;
+                ring_object_pcl_cloud += one_point_pcl_cloud;
+            }
         }
-        std::cout << std::endl;
     }
+
+    sensor_msgs::PointCloud2 cloud1;
+    pcl::toROSMsg(ring_object_pcl_cloud, cloud1);
+    cloud1.header.frame_id = sensor_frame_;
+    cloud_pub1_.publish(cloud1);
     */
 
+    //merge type_map and ring_filter_map
 
+    for (int i=0;i<160;i++){
+        for (int j=0;j<160;j++){
+            if (type_map[i][j] == LOW){
+                if(!ring_filter_map[i][j])type_map[i][j] = NONE;
+            }
+        }
+    }
+
+	pcl::PointCloud<pcl::PointXYZ> low_object_pcl_cloud;
+    pcl::PointCloud<pcl::PointXYZ> one_point_pcl_cloud;
+    one_point_pcl_cloud.width = 1;
+    one_point_pcl_cloud.height = 1;
+    one_point_pcl_cloud.is_dense = false;
+    one_point_pcl_cloud.resize (1);
+
+
+    for (int i=0;i<160;i++){
+        for (int j=0;j<160;j++){
+            if(type_map[i][j] == LOW){
+                double world_x,world_y;
+                mapToWorld(i,j,world_x,world_y);
+                one_point_pcl_cloud.points[0].x = world_x;
+                one_point_pcl_cloud.points[0].y = world_y;
+                one_point_pcl_cloud.points[0].z = 0;
+                low_object_pcl_cloud += one_point_pcl_cloud;
+            }
+        }
+    }
+
+    sensor_msgs::PointCloud2 cloud1;
+    pcl::toROSMsg(low_object_pcl_cloud, cloud1);
+    cloud1.header.frame_id = sensor_frame_;
+    cloud_pub1_.publish(cloud1);
 
     pcl::PointCloud<pcl::PointXYZI> pcl_cloud_odom;
     try
