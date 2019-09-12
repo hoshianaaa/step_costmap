@@ -42,6 +42,7 @@ private:
     bool pcl_z_binary_search(const pcl::PointCloud<pcl::PointXYZ>& pcl_cloud, const double z, pcl::PointXYZ& near_point);//0.0017rad = 0.1deg
     void mapToWorld(const int map_x, const int map_y, double& world_x, double& world_y);
     void worldToMap(const double world_x, const double world_y, int& map_x, int& map_y);
+    double road_probability(const int map_x, const int map_y);
 	void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs);
 	costmap_2d::Costmap2D costmap_;
 
@@ -168,6 +169,21 @@ void StepCostmap::worldToMap(const double world_x, const double world_y, int& ma
     if (map_y > 159)map_y = 159;
 }
 
+double StepCostmap::road_probability(const int map_x, const int map_y){
+    double world_x, world_y;
+    double d;
+    double prob;
+
+    mapToWorld(map_x, map_y, world_x, world_y);
+    d = std::sqrt(world_x * world_x + world_y + world_y);
+    prob = 0.5 * d / (8 * std::sqrt(2.0)); 
+    if (prob < 0)prob = 0.5;
+    if (prob > 0.5)prob = 0.5;
+    if (std::isnan(prob))prob = 0.5;
+
+    return prob;
+} 
+    
 void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 {
 	std::cout << "cloud callback" << std::endl;
@@ -319,6 +335,33 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
     cloud_pub1_.publish(cloud1);
     */
 
+    //** publish road object **//
+	pcl::PointCloud<pcl::PointXYZ> road_object_pcl_cloud;
+    pcl::PointCloud<pcl::PointXYZ> one_point_pcl_cloud;
+    one_point_pcl_cloud.width = 1;
+    one_point_pcl_cloud.height = 1;
+    one_point_pcl_cloud.is_dense = false;
+    one_point_pcl_cloud.resize (1);
+
+    for (int i=0;i<160;i++){
+        for (int j=0;j<160;j++){
+            if(type_map[i][j] == ROAD){
+                double world_x,world_y;
+                mapToWorld(i,j,world_x,world_y);
+                one_point_pcl_cloud.points[0].x = world_x;
+                one_point_pcl_cloud.points[0].y = world_y;
+                one_point_pcl_cloud.points[0].z = 0;
+                road_object_pcl_cloud += one_point_pcl_cloud;
+            }
+        }
+    }
+
+    sensor_msgs::PointCloud2 cloud2;
+    pcl::toROSMsg(road_object_pcl_cloud, cloud2);
+    cloud2.header.frame_id = sensor_frame_;
+    cloud_pub2_.publish(cloud2);
+ 
+
     //** ring_filter_map **//
     std::cout << "ring_filter_map" << std::endl;
 	pcl::PointCloud<pcl::PointXYZ> ring_pcl_cloud[16];
@@ -372,13 +415,9 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
             y1 = ring_pcl_cloud[i].points[j].y;
             d1 = std::sqrt(x1*x1 + y1*y1);
 
-            std::cout << "d1 " << d1 << std::endl;
-
             x2 = p.x;
             y2 = p.y;
             d2 = std::sqrt(x2*x2 + y2*y2);
-
-            std::cout << "d2 " << d2 << std::endl;
 
             d = d2 - d1;
 
@@ -429,11 +468,11 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
     }
 
 	pcl::PointCloud<pcl::PointXYZ> low_object_pcl_cloud;
-    pcl::PointCloud<pcl::PointXYZ> one_point_pcl_cloud;
-    one_point_pcl_cloud.width = 1;
-    one_point_pcl_cloud.height = 1;
-    one_point_pcl_cloud.is_dense = false;
-    one_point_pcl_cloud.resize (1);
+    pcl::PointCloud<pcl::PointXYZ> one_point_pcl_cloud2;
+    one_point_pcl_cloud2.width = 1;
+    one_point_pcl_cloud2.height = 1;
+    one_point_pcl_cloud2.is_dense = false;
+    one_point_pcl_cloud2.resize (1);
 
 
     for (int i=0;i<160;i++){
@@ -441,14 +480,28 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
             if(type_map[i][j] == LOW){
                 double world_x,world_y;
                 mapToWorld(i,j,world_x,world_y);
-                one_point_pcl_cloud.points[0].x = world_x;
-                one_point_pcl_cloud.points[0].y = world_y;
-                one_point_pcl_cloud.points[0].z = 0;
-                low_object_pcl_cloud += one_point_pcl_cloud;
+                one_point_pcl_cloud2.points[0].x = world_x;
+                one_point_pcl_cloud2.points[0].y = world_y;
+                one_point_pcl_cloud2.points[0].z = 0;
+                low_object_pcl_cloud += one_point_pcl_cloud2;
             }
         }
     }
 
+    //** occupancy grid map **//
+    double nowOGM[160][160];
+    double prob;
+    for (int i=0;i<160;i++){
+        for (int j=0;j<160;j++){
+            if (type_map[i][j] == LOW)nowOGM[i][j] = std::log(0.7/(1-0.7));
+            else if (type_map[i][j] == ROAD){
+                prob = road_probability(i,j);
+                nowOGM[i][j] = std::log(prob/(1-prob));
+            }else nowOGM[i][j] = std::log(0.5/(1-0.5));
+            if (nowOGM[i][j] < -1)nowOGM[i][j] = -1;
+            if (nowOGM[i][j] > 1)nowOGM[i][j] = 1;
+        }
+    }
     sensor_msgs::PointCloud2 cloud1;
     pcl::toROSMsg(low_object_pcl_cloud, cloud1);
     cloud1.header.frame_id = sensor_frame_;
