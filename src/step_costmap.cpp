@@ -45,8 +45,7 @@ private:
     double road_probability(const int map_x, const int map_y);
 	void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs);
 	costmap_2d::Costmap2D costmap_;
-
-	
+    unsigned char probToCost(const double prob);
 	std::string sensor_frame_, topic_name_;
 	double sensor_range_x_min_, sensor_range_x_max_, sensor_range_y_min_, sensor_range_y_max_, sensor_range_z_min_, sensor_range_z_max_;
     double z_th_;
@@ -183,7 +182,12 @@ double StepCostmap::road_probability(const int map_x, const int map_y){
 
     return prob;
 } 
-    
+
+unsigned char StepCostmap::probToCost(const double prob){
+    // -1~1 -> 0~255
+    return int((255/2)*prob+255/2);
+}
+
 void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 {
 	std::cout << "cloud callback" << std::endl;
