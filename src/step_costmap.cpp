@@ -13,7 +13,7 @@
 #include <pcl/common/common.h>
 #include <pcl/PCLPointCloud2.h>
 
-#include <math.h>
+#include <cmath>
 
 
 #define MIN_Z 0
@@ -39,6 +39,7 @@ private:
 	tf::TransformListener tf_listener_;
     void pcl_z_merge_sort(pcl::PointCloud<pcl::PointXYZ>& pcl_cloud, int left, int right);
     void pcl_z_merge(pcl::PointCloud<pcl::PointXYZ>& pcl_cloud, int left, int mid, int right);
+    bool pcl_z_binary_search(const pcl::PointCloud<pcl::PointXYZ>& pcl_cloud, const double z, pcl::PointXYZ& near_point);//0.0017rad = 0.1deg
     void mapToWorld(const int map_x, const int map_y, double& world_x, double& world_y);
     void worldToMap(const double world_x, const double world_y, int& map_x, int& map_y);
 	void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs);
@@ -127,6 +128,32 @@ void StepCostmap::pcl_z_merge(pcl::PointCloud<pcl::PointXYZ>& pcl_cloud, int lef
     }
 }
 
+
+bool StepCostmap::pcl_z_binary_search(const pcl::PointCloud<pcl::PointXYZ>& pcl_cloud, const double z, pcl::PointXYZ& near_point){
+
+    const double range = 0.0017;
+    double d = 100.0;
+    int m, r, l;
+
+    r = 0;
+    l = pcl_cloud.size();
+
+    while (1){
+        m = (r + l)/2;
+
+        d = std::abs(pcl_cloud.points[m].z - z);
+        std::cout << "z - z:" << pcl_cloud.points[m].z - z << std::endl;
+        std::cout << "d:" << d << std::endl;
+        if (d < range)break;
+
+        if ( pcl_cloud.points[m].z > z)l = m;
+        else r = m;
+        
+        if (r+1 >= l)return 0;
+    }
+    near_point = pcl_cloud.points[m];
+    return 1;
+}
 
 
 void StepCostmap::mapToWorld(const int map_x, const int map_y, double& world_x, double& world_y){
@@ -332,12 +359,18 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
         pcl_z_merge_sort(ring_pcl_cloud[i], 0, ring_pcl_cloud[i].size());
     }
 
+    /*
     for (int i=0;i<ring_pcl_cloud[0].size();i++){
         std::cout << ring_pcl_cloud[0].points[i].z << " ";
     }
     std::cout << std::endl;
+    */
 
 
+    pcl::PointXYZ p;
+    
+    std::cout << "ok:" << pcl_z_binary_search(ring_pcl_cloud[0] ,0.5, p);
+    std::cout << " binary search 0.5rad " << " x:" << p.x << " y:" << p.y << " z:" << p.z << std::endl;
 
     //for (int i=0;i<8;i++)std::cout << ring_pcl_cloud[i].size() << " ";
     //std::cout << std::endl;
@@ -384,6 +417,7 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
         std::cout << std::endl;
     }
     */
+
 
 
     pcl::PointCloud<pcl::PointXYZI> pcl_cloud_odom;
