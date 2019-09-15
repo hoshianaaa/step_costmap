@@ -34,10 +34,11 @@ public:
 private:
 	ros::NodeHandle nh_;
 	ros::Subscriber cloud_sub_;
-	ros::Publisher cloud_pub1_;
-	ros::Publisher cloud_pub2_;
-	ros::Publisher cloud_pub3_;
-	ros::Publisher low_object_cloud_pub_;
+	ros::Publisher low_cloud_pub_;
+	ros::Publisher road_cloud_pub_;
+    ros::Publisher ring_cloud_pub_;
+	ros::Publisher nowOGM_cloud_pub_;
+	ros::Publisher step_cloud_pub_;
 	tf::TransformListener tf_listener_;
     void pcl_z_merge_sort(pcl::PointCloud<pcl::PointXYZ>& pcl_cloud, int left, int right);
     void pcl_z_merge(pcl::PointCloud<pcl::PointXYZ>& pcl_cloud, int left, int mid, int right);
@@ -66,16 +67,17 @@ StepCostmap::StepCostmap()
 	private_nh.param("sensor_range_y_min", sensor_range_y_min_, -8.0);
 	private_nh.param("sensor_range_y_max", sensor_range_y_max_, 8.0);
 
-	private_nh.param("z_th", z_th_, 0.1);
+	private_nh.param("z_th", z_th_, 0.05);
 	
 	costmap_.setDefaultValue(probToCost(0));
 	costmap_.resizeMap(160, 160, 0.1, 0, 0);
 	
 
-	cloud_pub1_ = nh_.advertise<sensor_msgs::PointCloud2>("/cloud1", 1, false);
-	cloud_pub2_ = nh_.advertise<sensor_msgs::PointCloud2>("/cloud2", 1, false);
-	cloud_pub3_ = nh_.advertise<sensor_msgs::PointCloud2>("/step_costmap", 1, false);
-    low_object_cloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/low_object", 1, false);
+    low_cloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/low_cloud", 1, false);
+	road_cloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/road_cloud", 1, false);
+	ring_cloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/ring_cloud", 1, false);
+	nowOGM_cloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/ogm", 1, false);
+	step_cloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/step_costmap", 1, false);
 	cloud_sub_ = nh_.subscribe(topic_name_, 1, &StepCostmap::cloudCallback, this);
 }
 
@@ -335,7 +337,7 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 
     //** publish low object **//
 
-	pcl::PointCloud<pcl::PointXYZ> low_object_pcl_cloud;
+	pcl::PointCloud<pcl::PointXYZ> low_pcl_cloud;
     pcl::PointCloud<pcl::PointXYZ> one_point_pcl_cloud;
     one_point_pcl_cloud.width = 1;
     one_point_pcl_cloud.height = 1;
@@ -350,18 +352,18 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
                 one_point_pcl_cloud.points[0].x = world_x;
                 one_point_pcl_cloud.points[0].y = world_y;
                 one_point_pcl_cloud.points[0].z = 0;
-                low_object_pcl_cloud += one_point_pcl_cloud;
+                low_pcl_cloud += one_point_pcl_cloud;
             }
         }
     }
 
-    sensor_msgs::PointCloud2 low_object_cloud;
-    pcl::toROSMsg(low_object_pcl_cloud, low_object_cloud);
-    low_object_cloud.header.frame_id = sensor_frame_;
-    low_object_cloud_pub_.publish(low_object_cloud);
+    sensor_msgs::PointCloud2 low_cloud;
+    pcl::toROSMsg(low_pcl_cloud, low_cloud);
+    low_cloud.header.frame_id = sensor_frame_;
+    low_cloud_pub_.publish(low_cloud);
 
     //** publish road object **//
-	pcl::PointCloud<pcl::PointXYZ> road_object_pcl_cloud;
+	pcl::PointCloud<pcl::PointXYZ> road_pcl_cloud;
     
     for (int i=0;i<160;i++){
         for (int j=0;j<160;j++){
@@ -371,15 +373,15 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
                 one_point_pcl_cloud.points[0].x = world_x;
                 one_point_pcl_cloud.points[0].y = world_y;
                 one_point_pcl_cloud.points[0].z = 0;
-                road_object_pcl_cloud += one_point_pcl_cloud;
+                road_pcl_cloud += one_point_pcl_cloud;
             }
         }
     }
 
-    sensor_msgs::PointCloud2 cloud2;
-    pcl::toROSMsg(road_object_pcl_cloud, cloud2);
-    cloud2.header.frame_id = sensor_frame_;
-    cloud_pub2_.publish(cloud2);
+    sensor_msgs::PointCloud2 road_cloud;
+    pcl::toROSMsg(road_pcl_cloud, road_cloud);
+    road_cloud.header.frame_id = sensor_frame_;
+    road_cloud_pub_.publish(road_cloud);
  
 
     //** ring_filter_map **//
@@ -449,14 +451,7 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
         }
     }
 
-    /*
 	pcl::PointCloud<pcl::PointXYZ> ring_object_pcl_cloud;
-    pcl::PointCloud<pcl::PointXYZ> one_point_pcl_cloud;
-    one_point_pcl_cloud.width = 1;
-    one_point_pcl_cloud.height = 1;
-    one_point_pcl_cloud.is_dense = false;
-    one_point_pcl_cloud.resize (1);
-
 
     for (int i=0;i<160;i++){
         for (int j=0;j<160;j++){
@@ -471,11 +466,10 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
         }
     }
 
-    sensor_msgs::PointCloud2 cloud1;
-    pcl::toROSMsg(ring_object_pcl_cloud, cloud1);
-    cloud1.header.frame_id = sensor_frame_;
-    cloud_pub1_.publish(cloud1);
-    */
+    sensor_msgs::PointCloud2 ring_cloud;
+    pcl::toROSMsg(ring_object_pcl_cloud, ring_cloud);
+    ring_cloud.header.frame_id = sensor_frame_;
+    ring_cloud_pub_.publish(ring_cloud);
 
     //merge type_map and ring_filter_map
 
@@ -553,7 +547,8 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 
    
     now_ogm_cloud.header.frame_id = "odom";
-    cloud_pub1_.publish(now_ogm_cloud_odom);
+    nowOGM_cloud_pub_.publish(now_ogm_cloud_odom);
+    
  
 	pcl::PointCloud<pcl::PointXYZI> now_ogm_pcl_cloud_odom;
     pcl::fromROSMsg (now_ogm_cloud_odom, now_ogm_pcl_cloud_odom); 
@@ -623,7 +618,7 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
     sensor_msgs::PointCloud2 step_cloud;
     pcl::toROSMsg(step_pcl_cloud, step_cloud);
     step_cloud.header.frame_id = "odom";
-    cloud_pub3_.publish(step_cloud);
+    step_cloud_pub_.publish(step_cloud);
 }
 
 int main(int argc, char **argv)
