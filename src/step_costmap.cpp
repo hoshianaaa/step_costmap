@@ -498,6 +498,17 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
             if (nowOGM[i][j] > 1)nowOGM[i][j] = 1;
         }
     }
+
+    //dalete data near sensor
+    for (int i=-10;i<11;i++){
+        for (int j=-10;j<11;j++){
+            nowOGM[i][j] = 0;
+        }
+    }
+
+    
+    
+    
     /*
     for (int i=0;i<160;i++){
         for (int j=0;j<160;j++){
