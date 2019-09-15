@@ -22,7 +22,7 @@
 
 #define LOW 1
 #define MIDDLE 2
-#define HIGH 3
+#define HIGH 3 
 #define ROAD 4
 #define NONE 0
 
@@ -37,6 +37,7 @@ private:
 	ros::Publisher cloud_pub1_;
 	ros::Publisher cloud_pub2_;
 	ros::Publisher cloud_pub3_;
+	ros::Publisher low_object_cloud_pub_;
 	tf::TransformListener tf_listener_;
     void pcl_z_merge_sort(pcl::PointCloud<pcl::PointXYZ>& pcl_cloud, int left, int right);
     void pcl_z_merge(pcl::PointCloud<pcl::PointXYZ>& pcl_cloud, int left, int mid, int right);
@@ -74,6 +75,7 @@ StepCostmap::StepCostmap()
 	cloud_pub1_ = nh_.advertise<sensor_msgs::PointCloud2>("/cloud1", 1, false);
 	cloud_pub2_ = nh_.advertise<sensor_msgs::PointCloud2>("/cloud2", 1, false);
 	cloud_pub3_ = nh_.advertise<sensor_msgs::PointCloud2>("/step_costmap", 1, false);
+    low_object_cloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/low_object", 1, false);
 	cloud_sub_ = nh_.subscribe(topic_name_, 1, &StepCostmap::cloudCallback, this);
 }
 
@@ -176,24 +178,36 @@ double StepCostmap::road_probability(const int map_x, const int map_y){
     double d;
     double prob;
 
+    /*
     mapToWorld(map_x, map_y, world_x, world_y);
     d = std::sqrt(world_x * world_x + world_y + world_y);
-    prob = (0.2 * d / (8 * std::sqrt(2.0)))+0.4; 
+    prob = (0.3 * d / (8 * std::sqrt(2.0))+0.3); 
     if (prob < 0)prob = 0.5;
     if (prob > 0.5)prob = 0.5;
     if (std::isnan(prob))prob = 0.5;
+    */
 
+    prob = 0.4;
     return prob;
 } 
 
 unsigned char StepCostmap::probToCost(const double prob){
     // -1~1 -> 0~255
-    return int((255/2)*prob+255/2);
+    if (prob < -1)return 0;
+    if (prob > 1)return 255;
+    return int((int)(255/2)*prob+(int)(255/2));
 }
 
 double StepCostmap::costToProb(unsigned char cost){
     // 0~255 -> -1~1
-    return double((cost-255/2)/(255/2));
+    if (cost > 255){
+        return 1.0;
+    }
+
+    if (cost < 0){
+        return -1.0;
+    }
+    return ((double)cost-(int)(255/2))/(int(255/2));
 }
 
 void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
@@ -312,7 +326,7 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
             double diff_value = diff_map[i][j];
             if (diff_value < 0)type_map[i][j] = -1; //error
             else if (diff_value == 0)type_map[i][j] = NONE;
-            else if (0 < diff_value && diff_value < 0.1)type_map[i][j] = ROAD;
+            else if (0 < diff_value && diff_value < z_th_)type_map[i][j] = ROAD;
             else if (diff_value < 0.3)type_map[i][j] = LOW;
             else if (diff_value < 0.4)type_map[i][j] = MIDDLE;
             else if (diff_value >= 0.4)type_map[i][j] = HIGH;
@@ -320,7 +334,7 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
     }
 
     //** publish low object **//
-    /*
+
 	pcl::PointCloud<pcl::PointXYZ> low_object_pcl_cloud;
     pcl::PointCloud<pcl::PointXYZ> one_point_pcl_cloud;
     one_point_pcl_cloud.width = 1;
@@ -341,20 +355,14 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
         }
     }
 
-    sensor_msgs::PointCloud2 cloud1;
-    pcl::toROSMsg(low_object_pcl_cloud, cloud1);
-    cloud1.header.frame_id = sensor_frame_;
-    cloud_pub1_.publish(cloud1);
-    */
+    sensor_msgs::PointCloud2 low_object_cloud;
+    pcl::toROSMsg(low_object_pcl_cloud, low_object_cloud);
+    low_object_cloud.header.frame_id = sensor_frame_;
+    low_object_cloud_pub_.publish(low_object_cloud);
 
     //** publish road object **//
 	pcl::PointCloud<pcl::PointXYZ> road_object_pcl_cloud;
-    pcl::PointCloud<pcl::PointXYZ> one_point_pcl_cloud;
-    one_point_pcl_cloud.width = 1;
-    one_point_pcl_cloud.height = 1;
-    one_point_pcl_cloud.is_dense = false;
-    one_point_pcl_cloud.resize (1);
-
+    
     for (int i=0;i<160;i++){
         for (int j=0;j<160;j++){
             if(type_map[i][j] == ROAD){
@@ -434,7 +442,7 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
             d = d2 - d1;
 
             int mx,my;
-            if (d/D[i] < 0.1){
+            if (d/D[i] < 0.05){
                 worldToMap(x1, y1, mx, my);
                 ring_filter_map[mx][my] = 1;
             }
@@ -479,43 +487,31 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
         }
     }
 
-	pcl::PointCloud<pcl::PointXYZ> low_object_pcl_cloud;
-    pcl::PointCloud<pcl::PointXYZ> one_point_pcl_cloud2;
-    one_point_pcl_cloud2.width = 1;
-    one_point_pcl_cloud2.height = 1;
-    one_point_pcl_cloud2.is_dense = false;
-    one_point_pcl_cloud2.resize (1);
-
-
-
-    for (int i=0;i<160;i++){
-        for (int j=0;j<160;j++){
-            if(type_map[i][j] == LOW){
-                double world_x,world_y;
-                mapToWorld(i,j,world_x,world_y);
-                one_point_pcl_cloud2.points[0].x = world_x;
-                one_point_pcl_cloud2.points[0].y = world_y;
-                one_point_pcl_cloud2.points[0].z = 0;
-                low_object_pcl_cloud += one_point_pcl_cloud2;
-            }
-        }
-    }
 
     //** occupancy grid map **//
     double nowOGM[160][160];
     double prob;
     for (int i=0;i<160;i++){
         for (int j=0;j<160;j++){
-            if (type_map[i][j] == LOW)nowOGM[i][j] = std::log(0.7/(1-0.7));
-            else if (type_map[i][j] == ROAD){
+            if (type_map[i][j] == LOW){nowOGM[i][j] = std::log(0.7/(1-0.7));
+            }else if (type_map[i][j] == ROAD){
                 prob = road_probability(i,j);
+                if (prob >= 0.5)prob = 0.5;
                 nowOGM[i][j] = std::log(prob/(1-prob));
-            }else nowOGM[i][j] = std::log(0.5/(1-0.5));
+            }else{nowOGM[i][j] = std::log(0.5/(1-0.5));}
+          
             if (nowOGM[i][j] < -1)nowOGM[i][j] = -1;
             if (nowOGM[i][j] > 1)nowOGM[i][j] = 1;
         }
     }
-
+    /*
+    for (int i=0;i<160;i++){
+        for (int j=0;j<160;j++){
+            if (nowOGM[i][j] < 0)std::cout << (double)nowOGM[i][j] << " ";
+        }
+    }
+    std::cout << std::endl;
+    */
 
 	pcl::PointCloud<pcl::PointXYZI> now_ogm_pcl_cloud;
     now_ogm_pcl_cloud.width = 160*160;
@@ -530,7 +526,7 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
                 mapToWorld(i,j,world_x,world_y);
                 now_ogm_pcl_cloud.points[160*i+j].x = world_x;
                 now_ogm_pcl_cloud.points[160*i+j].y = world_y;
-                now_ogm_pcl_cloud.points[160*i+j].z = 0;
+                now_ogm_pcl_cloud.points[160*i+j].z = nowOGM[i][j];
                 now_ogm_pcl_cloud.points[160*i+j].intensity= nowOGM[i][j];
         }
     }
@@ -562,27 +558,44 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 	pcl::PointCloud<pcl::PointXYZI> now_ogm_pcl_cloud_odom;
     pcl::fromROSMsg (now_ogm_cloud_odom, now_ogm_pcl_cloud_odom); 
 
-    //costmap_ -> OGM
-    
+    int low_counter = 0;
+    int road_counter = 0;
+    for (int i=0;i<now_ogm_pcl_cloud_odom.size();i++){
+        prob = now_ogm_pcl_cloud_odom.points[i].intensity;
+        if (prob < 0.0)road_counter++;
+        if (prob > 0.0)low_counter++;
+    }
+    std::cout << "r:" << road_counter <<" ";
+    std::cout << "l:" << low_counter << std::endl;
+
+   
     for (int i=0;i<now_ogm_pcl_cloud_odom.size();i++){
         unsigned int mx,my;
         unsigned char cost;
         
+        double prob = now_ogm_pcl_cloud_odom.points[i].intensity;
 
         if(costmap_.worldToMap(now_ogm_pcl_cloud_odom.points[i].x, now_ogm_pcl_cloud_odom.points[i].y, mx, my)){
+            //if (prob > 0)std::cout << " cp:"<<costToProb(costmap_.getCost(mx, my)) << "+"<< "p:"<<now_ogm_pcl_cloud_odom.points[i].intensity;
+
+            //if ((int)costmap_.getCost(mx,my)>127)std::cout <<"c:"<< (int)costmap_.getCost(mx,my)<<" p:"<<prob;
+
             cost =  probToCost(costToProb(costmap_.getCost(mx, my)) + now_ogm_pcl_cloud_odom.points[i].intensity);
-            //std::cout << "cost:" << (double)costToProb(costmap_.getCost(mx,my)) << " + " << now_ogm_pcl_cloud_odom.points[i].intensity <<  std::endl;
+            //if ((int)costmap_.getCost(mx,my)>127)std::cout <<" after_c:"<<(int)cost<<std::endl;
+            //if (prob > 0)std::cout <<" ="<<(int)cost<<std::endl;
+            //if (prob > 0)std::cout << " ="<<costToProb(costmap_.getCost(mx, my)) + now_ogm_pcl_cloud_odom.points[i].intensity<< std::endl;
             costmap_.setCost(mx, my, cost);
         }
     }
-    
-    for (int i=0;i<160;i++){
-        for (int j=0;j<160;j++){
-            std::cout << costToProb(costmap_.getCost(i, j)) << " ";
-        }
-        std::cout << std::endl;
+    //std::cout << std::endl;
+    /*
+    for (int i=-255;i<500;i++){
+        std::cout << i << ":";
+        std::cout << costToProb(i) << std::endl;
     }
+    */
 
+    std::cout << "cost"<< (int)probToCost(0.5) << std::endl;
 
 	pcl::PointCloud<pcl::PointXYZ> step_pcl_cloud;
     pcl::PointCloud<pcl::PointXYZ> one_point_pcl_cloud3;
@@ -594,8 +607,8 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 
     for (int i=0;i<160;i++){
         for (int j=0;j<160;j++){
-//            std::cout << (int)costmap_.getCost(i,j) << " " << ">=" << (int)probToCost(0.2) << " ";
-            if(costmap_.getCost(i,j) >= probToCost(0.2)){
+ //           std::cout << (int)costmap_.getCost(i,j) << " ";
+            if(costmap_.getCost(i,j) >= probToCost(0.5)){
                 double world_x,world_y;
                 costmap_.mapToWorld(i,j,world_x,world_y);
                 one_point_pcl_cloud3.points[0].x = world_x;
@@ -604,7 +617,7 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
                 step_pcl_cloud += one_point_pcl_cloud3;
             }
         }
- //       std::cout << std::endl;
+//       std::cout << std::endl;
     }
 
     sensor_msgs::PointCloud2 step_cloud;
