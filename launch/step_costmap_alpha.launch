@@ -2,6 +2,6 @@
 
 <launch>
   <node name="step_costmap" pkg="step_costmap" type="step_costmap" output="screen">
-   <param name="z_th" value="0.05" />
+   <param name="z_th" value="0.04" />
   </node>
 </launch>
