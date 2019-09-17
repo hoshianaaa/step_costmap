@@ -261,7 +261,7 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 	pass.filter (pcl_cloud);
 
     //filter1:deleate near point cloud to sensor 
-    const double filter1_distance = 1.0;
+    const double filter1_distance = 1.7;
 	pcl::PointCloud<pcl::PointXYZI> filtered_pcl_cloud;
 
     for (int i=0;i<pcl_cloud.size();i++){
