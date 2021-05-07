@@ -208,3 +208,6 @@ include_directories(
 # catkin_add_nosetests(test)
 add_executable(step_costmap src/step_costmap.cpp)
 target_link_libraries(step_costmap ${catkin_LIBRARIES})
+
+add_executable(step_costmap_rs src/step_costmap_rs.cpp)
+target_link_libraries(step_costmap_rs ${catkin_LIBRARIES})

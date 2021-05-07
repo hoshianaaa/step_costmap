@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+
+<launch>
+  <node name="step_costmap_rs" pkg="step_costmap" type="step_costmap_rs" output="screen">
+    <param name="sensor_frame" value="base_link" />
+    <param name="topic_name" value="/tf_cloud" />
+  </node>
+</launch>
