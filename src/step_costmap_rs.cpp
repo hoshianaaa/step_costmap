@@ -333,6 +333,7 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 	pass.filter (pcl_cloud);
 
     //filter1:deleate near point cloud to sensor 
+    /*
     const double filter1_distance = 1.5;
 	  pcl::PointCloud<pcl::PointXYZI> filtered_pcl_cloud;
 
@@ -353,15 +354,17 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
             filtered_pcl_cloud.push_back(p);
         }
     }
+    */
 
     //filter2:deleate high object like a human
     //pcl::PointCloud<pcl::PointXYZI> filtered_pcl_cloud;
+    /*
     pcl::PointCloud<pcl::PointXYZI> high_pcl_cloud;
 
-	pass.setInputCloud (filtered_pcl_cloud.makeShared());
-	pass.setFilterFieldName ("z");
-	pass.setFilterLimits (0.3, 1.0);
-	pass.filter (high_pcl_cloud);
+    pass.setInputCloud (filtered_pcl_cloud.makeShared());
+    pass.setFilterFieldName ("z");
+    pass.setFilterLimits (0.3, 1.0);
+    pass.filter (high_pcl_cloud);
 
     sensor_msgs::PointCloud2 high_cloud;
     pcl::toROSMsg(high_pcl_cloud, high_cloud);
@@ -380,12 +383,12 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
         }
     }
 
-    for (int i=0;i<high_pcl_cloud.size();i++){
+    for (int i=0;i<pcl_cloud.size();i++){
         int mx,my;
         double wx,wy;
 
-        wx = high_pcl_cloud.points[i].x;
-        wy = high_pcl_cloud.points[i].y;
+        wx = pcl_cloud.points[i].x;
+        wy = pcl_cloud.points[i].y;
         if(worldToMap(wx, wy, mx, my)){
           deleate_map[mx][my] = 1;
           //std::cout << "wx:" << wx << " wy:" << wy << " mx:" << mx << " my:" << my << std::endl;
@@ -454,18 +457,19 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
     deleate_cloud.header.frame_id = sensor_frame_;
 
     deleate_cloud_pub_.publish(deleate_cloud);
+    */
 
     //region_pcl
     double height_map[160][160][3];//min_z,max_z,have_value
-	pcl::PointCloud<pcl::PointXYZI> region_cloud1;
-	pcl::PointCloud<pcl::PointXYZI> region_cloud2;
+	  pcl::PointCloud<pcl::PointXYZI> region_cloud1;
+	  pcl::PointCloud<pcl::PointXYZI> region_cloud2;
     pcl::PointXYZI minPt, maxPt;
 
     for (int i=0;i<160;i++){
 
         double min_x = -8.0 + 0.1*i;
 
-        pass.setInputCloud (filtered_pcl_cloud.makeShared());
+        pass.setInputCloud (pcl_cloud.makeShared());
         pass.setFilterFieldName ("x");
         pass.setFilterLimits (min_x, min_x + 0.1 );
         pass.filter (region_cloud1);
@@ -526,8 +530,8 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
     for (int i=0;i<160;i++){
         for (int j=0;j<160;j++){
             double diff_value = diff_map[i][j];
-            if (expanded_deleate_map[i][j] == 1)type_map[i][j] = NONE;
-            else if (diff_value < 0)type_map[i][j] = -1; //error
+            //if (expanded_deleate_map[i][j] == 1)type_map[i][j] = NONE;
+            if(diff_value < 0)type_map[i][j] = -1; //error
             else if (diff_value == 0)type_map[i][j] = NONE;
             else if (0 < diff_value && diff_value < z_th_)type_map[i][j] = ROAD;
             else if (diff_value < 0.3)type_map[i][j] = LOW;
@@ -627,7 +631,7 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
                 mapToWorld(i,j,world_x,world_y);
                 now_ogm_pcl_cloud.points[160*i+j].x = world_x;
                 now_ogm_pcl_cloud.points[160*i+j].y = world_y;
-                now_ogm_pcl_cloud.points[160*i+j].z = nowOGM[i][j];
+                now_ogm_pcl_cloud.points[160*i+j].z = 0;
                 now_ogm_pcl_cloud.points[160*i+j].intensity= nowOGM[i][j];
         }
     }
