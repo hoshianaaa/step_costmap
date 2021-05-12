@@ -534,9 +534,9 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
             if(diff_value < 0)type_map[i][j] = -1; //error
             else if (diff_value == 0)type_map[i][j] = NONE;
             else if (0 < diff_value && diff_value < z_th_)type_map[i][j] = ROAD;
-            else if (diff_value < 0.3)type_map[i][j] = LOW;
-            else if (diff_value < 0.4)type_map[i][j] = MIDDLE;
-            else if (diff_value >= 0.4)type_map[i][j] = HIGH;
+            else type_map[i][j] = LOW;
+            //else if (diff_value < 0.3)type_map[i][j] = LOW;
+            //else if (diff_value < 0.4)type_map[i][j] = MIDDLE;
         }
     }
 
