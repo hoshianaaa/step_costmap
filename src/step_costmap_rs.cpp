@@ -94,6 +94,8 @@ StepCostmap::StepCostmap()
 	private_nh.param("sensor_range_x_max", sensor_range_x_max_, 8.0);
 	private_nh.param("sensor_range_y_min", sensor_range_y_min_, -8.0);
 	private_nh.param("sensor_range_y_max", sensor_range_y_max_, 8.0);
+	private_nh.param("sensor_range_z_min", sensor_range_z_min_, -0.5);
+	private_nh.param("sensor_range_z_max", sensor_range_z_max_, 0.8);
 
 	private_nh.param("z_th", z_th_, 0.05);
 	
@@ -302,8 +304,8 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 	try
 	{	
 		tf::StampedTransform trans;
-		tf_listener_.waitForTransform("odom", "base_link", ros::Time(0), ros::Duration(1));
-		tf_listener_.lookupTransform("odom", "base_link", ros::Time(0), trans);
+		tf_listener_.waitForTransform("map", "base_link", ros::Time(0), ros::Duration(1));
+		tf_listener_.lookupTransform("map", "base_link", ros::Time(0), trans);
 		robot_x = trans.getOrigin().x();
 		robot_y = trans.getOrigin().y();
 	}
@@ -324,12 +326,17 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
 	pcl::PassThrough<pcl::PointXYZI> pass;
 	pass.setInputCloud (pcl_cloud.makeShared());
 	pass.setFilterFieldName ("x");
-	pass.setFilterLimits (sensor_range_x_min_, sensor_range_x_max_);
+	pass.setFilterLimits (0,6);
 	pass.filter (pcl_cloud);
 	
 	pass.setInputCloud (pcl_cloud.makeShared());
 	pass.setFilterFieldName ("y");
 	pass.setFilterLimits (sensor_range_y_min_, sensor_range_y_max_);
+	pass.filter (pcl_cloud);
+
+	pass.setInputCloud (pcl_cloud.makeShared());
+	pass.setFilterFieldName ("z");
+	pass.setFilterLimits (sensor_range_z_min_, sensor_range_z_max_);
 	pass.filter (pcl_cloud);
 
     //filter1:deleate near point cloud to sensor 
@@ -641,15 +648,15 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
     pcl::toROSMsg(now_ogm_pcl_cloud, now_ogm_cloud);
 
     now_ogm_cloud.header.frame_id = sensor_frame_;
-    sensor_msgs::PointCloud2 now_ogm_cloud_odom;
+    sensor_msgs::PointCloud2 now_ogm_cloud_map;
 
 
     try
     {
         tf::StampedTransform trans;
-        tf_listener_.waitForTransform("odom", sensor_frame_, ros::Time(0), ros::Duration(0.5));
-        tf_listener_.lookupTransform("odom", sensor_frame_, ros::Time(0), trans);
-        pcl_ros::transformPointCloud("odom", trans, now_ogm_cloud, now_ogm_cloud_odom);
+        tf_listener_.waitForTransform("map", sensor_frame_, ros::Time(0), ros::Duration(0.5));
+        tf_listener_.lookupTransform("map", sensor_frame_, ros::Time(0), trans);
+        pcl_ros::transformPointCloud("map", trans, now_ogm_cloud, now_ogm_cloud_map);
     }
     catch(tf::TransformException &e)
     {
@@ -657,17 +664,17 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
     }
 
    
-    now_ogm_cloud.header.frame_id = "odom";
-    nowOGM_cloud_pub_.publish(now_ogm_cloud_odom);
+    now_ogm_cloud.header.frame_id = "map";
+    nowOGM_cloud_pub_.publish(now_ogm_cloud_map);
     
  
-	pcl::PointCloud<pcl::PointXYZI> now_ogm_pcl_cloud_odom;
-    pcl::fromROSMsg (now_ogm_cloud_odom, now_ogm_pcl_cloud_odom); 
+	pcl::PointCloud<pcl::PointXYZI> now_ogm_pcl_cloud_map;
+    pcl::fromROSMsg (now_ogm_cloud_map, now_ogm_pcl_cloud_map); 
 
     int low_counter = 0;
     int road_counter = 0;
-    for (int i=0;i<now_ogm_pcl_cloud_odom.size();i++){
-        prob = now_ogm_pcl_cloud_odom.points[i].intensity;
+    for (int i=0;i<now_ogm_pcl_cloud_map.size();i++){
+        prob = now_ogm_pcl_cloud_map.points[i].intensity;
         if (prob < 0.0)road_counter++;
         if (prob > 0.0)low_counter++;
     }
@@ -675,21 +682,21 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
     std::cout << "l:" << low_counter << std::endl;
 
    
-    for (int i=0;i<now_ogm_pcl_cloud_odom.size();i++){
+    for (int i=0;i<now_ogm_pcl_cloud_map.size();i++){
         unsigned int mx,my;
         unsigned char cost;
         
-        double prob = now_ogm_pcl_cloud_odom.points[i].intensity;
+        double prob = now_ogm_pcl_cloud_map.points[i].intensity;
 
-        if(costmap_.worldToMap(now_ogm_pcl_cloud_odom.points[i].x, now_ogm_pcl_cloud_odom.points[i].y, mx, my)){
-            //if (prob > 0)std::cout << " cp:"<<costToProb(costmap_.getCost(mx, my)) << "+"<< "p:"<<now_ogm_pcl_cloud_odom.points[i].intensity;
+        if(costmap_.worldToMap(now_ogm_pcl_cloud_map.points[i].x, now_ogm_pcl_cloud_map.points[i].y, mx, my)){
+            //if (prob > 0)std::cout << " cp:"<<costToProb(costmap_.getCost(mx, my)) << "+"<< "p:"<<now_ogm_pcl_cloud_map.points[i].intensity;
 
             //if ((int)costmap_.getCost(mx,my)>127)std::cout <<"c:"<< (int)costmap_.getCost(mx,my)<<" p:"<<prob;
 
-            cost =  probToCost(costToProb(costmap_.getCost(mx, my)) + now_ogm_pcl_cloud_odom.points[i].intensity);
+            cost =  probToCost(costToProb(costmap_.getCost(mx, my)) + now_ogm_pcl_cloud_map.points[i].intensity);
             //if ((int)costmap_.getCost(mx,my)>127)std::cout <<" after_c:"<<(int)cost<<std::endl;
             //if (prob > 0)std::cout <<" ="<<(int)cost<<std::endl;
-            //if (prob > 0)std::cout << " ="<<costToProb(costmap_.getCost(mx, my)) + now_ogm_pcl_cloud_odom.points[i].intensity<< std::endl;
+            //if (prob > 0)std::cout << " ="<<costToProb(costmap_.getCost(mx, my)) + now_ogm_pcl_cloud_map.points[i].intensity<< std::endl;
             costmap_.setCost(mx, my, cost);
         }
     }
@@ -732,8 +739,8 @@ void StepCostmap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msgs)
     try
     {
         tf::StampedTransform trans;
-        tf_listener_.waitForTransform(sensor_frame_, "odom", ros::Time(0), ros::Duration(0.5));
-        tf_listener_.lookupTransform(sensor_frame_, "odom", ros::Time(0), trans);
+        tf_listener_.waitForTransform(sensor_frame_, "map", ros::Time(0), ros::Duration(0.5));
+        tf_listener_.lookupTransform(sensor_frame_, "map", ros::Time(0), trans);
         pcl_ros::transformPointCloud(sensor_frame_, trans, step_cloud, step_cloud);
     }
     catch(tf::TransformException &e)
