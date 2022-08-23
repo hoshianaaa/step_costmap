@@ -1,6 +1,6 @@
 # step_costmap　  
 
-step detection 
+step detection by 3d-Lidar
 
 # algorithm
 
